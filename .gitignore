@@ -1,0 +1,23 @@
+# Dependencies (installed with `npm install`)
+node_modules/
+
+# Build tooling caches
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Local files
+.env
+.env.*
+*.log
+npm-debug.log*
+
+# Deploy artefacts and backups
+*.zip
+*-backup-*/
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp

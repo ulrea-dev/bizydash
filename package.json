@@ -1,0 +1,28 @@
+{
+  "name": "bizydash",
+  "version": "1.1.0",
+  "private": true,
+  "description": "BizyDash — agency operations dashboard (WordPress plugin)",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@fontsource-variable/inter": "^5.3.0",
+    "chart.js": "^4.5.1",
+    "element-plus": "^2.14.7",
+    "lucide-vue-next": "^1.0.0",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/test-utils": "^2.5.1",
+    "happy-dom": "^20.14.5",
+    "sass": "^1.105.1",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}
