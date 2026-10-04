@@ -32,13 +32,27 @@ class Resource_Controller {
 		return current_user_can( 'bizydash_finance' );
 	}
 
-	private function perm() {
-		return ! empty( $this->cfg['finance'] ) ? array( __CLASS__, 'can_finance' ) : array( __CLASS__, 'can' );
+	/** Who may use this resource: money resources need the finance cap, module resources their module's cap, core resources can be read by everyone but only changed by the right role. */
+	private function perm( $write = false ) {
+		if ( ! empty( $this->cfg['finance'] ) ) {
+			return array( __CLASS__, 'can_finance' );
+		}
+		$cap = \BizyDash\Roles::module_cap( \BizyDash\Modules::resource_module( $this->name ) );
+		if ( '' === $cap && $write ) {
+			$cap = \BizyDash\Roles::write_cap( $this->name );
+		}
+		if ( '' !== $cap ) {
+			return function () use ( $cap ) {
+				return current_user_can( 'manage_bizydash' ) && current_user_can( $cap );
+			};
+		}
+		return array( __CLASS__, 'can' );
 	}
 
 	public function register() {
 		$route    = $this->cfg['route'];
 		$perm     = $this->perm();
+		$wperm    = $this->perm( true );
 		$readonly = ! empty( $this->cfg['readonly'] );
 
 		$collection = array(
@@ -48,9 +62,9 @@ class Resource_Controller {
 			array( 'methods' => 'GET', 'callback' => array( $this, 'show' ), 'permission_callback' => $perm ),
 		);
 		if ( ! $readonly ) {
-			$collection[] = array( 'methods' => 'POST', 'callback' => array( $this, 'create' ), 'permission_callback' => $perm );
-			$item[]       = array( 'methods' => 'PUT,PATCH', 'callback' => array( $this, 'update' ), 'permission_callback' => $perm );
-			$item[]       = array( 'methods' => 'DELETE', 'callback' => array( $this, 'destroy' ), 'permission_callback' => $perm );
+			$collection[] = array( 'methods' => 'POST', 'callback' => array( $this, 'create' ), 'permission_callback' => $wperm );
+			$item[]       = array( 'methods' => 'PUT,PATCH', 'callback' => array( $this, 'update' ), 'permission_callback' => $wperm );
+			$item[]       = array( 'methods' => 'DELETE', 'callback' => array( $this, 'destroy' ), 'permission_callback' => $wperm );
 		}
 
 		register_rest_route( self::NS, '/' . $route, $collection );

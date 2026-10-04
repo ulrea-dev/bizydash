@@ -26,12 +26,16 @@ class Cron {
 
 	public static function unschedule() {
 		wp_clear_scheduled_hook( self::HOOK );
+		wp_clear_scheduled_hook( Backup\Backup_Manager::AUTO );
 	}
 
 	/** Roll invoice statuses forward (due/overdue) and flag renewals that are coming up. */
 	public static function run() {
 		global $wpdb;
 
+		if ( Backup\Importer::locked() ) {
+			return; // a restore is running
+		}
 		if ( Modules::enabled( 'finance' ) ) {
 			$inv = Schema::table( 'invoices' );
 			$ids = $wpdb->get_col( "SELECT id FROM $inv WHERE status IN ('sent','due','partially_paid','overdue')" ); // phpcs:ignore WordPress.DB

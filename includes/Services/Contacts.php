@@ -37,6 +37,7 @@ class Contacts {
 			array( 'contact_person' => $primary ? $primary['name'] : '', 'email' => $primary ? $primary['email'] : '', 'phone' => $primary ? $primary['phone'] : '' ),
 			array( 'id' => (int) $client_id )
 		);
+		Portal_Users::sync_client( $client_id );
 	}
 
 	/**

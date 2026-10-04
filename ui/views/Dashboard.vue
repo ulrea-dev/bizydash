@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { Coin, Wallet, TrendCharts, Tickets, Finished, Filter, CircleCheckFilled, CircleCheck, DocumentChecked } from '@element-plus/icons-vue';
+import { ElMessageBox } from 'element-plus';
 import { api, errorMessage } from '../api';
 import { store, navigate } from '../store';
 import BillingState from '../components/BillingState.vue';
@@ -157,6 +158,35 @@ const dismissSetup = () => {
 	try { localStorage.setItem( 'bizydash_setup_dismissed', '1' ); } catch ( e ) { /* ignore */ }
 };
 const showSetup = computed( () => setup.value && ! dismissed.value && setupDone.value < setupSteps.value.length );
+const loadingDemo = ref( false );
+const tryDemo = async () => {
+	loadingDemo.value = true;
+	try {
+		await api.post( 'demo' );
+		window.location.reload();
+	} catch ( e ) {
+		loadingDemo.value = false;
+		error.value = errorMessage( e );
+	}
+};
+const removingDemo = ref( false );
+const removeDemo = async () => {
+	try {
+		await ElMessageBox.confirm( 'Remove all the sample clients, invoices, projects and everything else that came with them? Anything you added yourself stays.', 'Remove sample data', { type: 'warning', confirmButtonText: 'Remove sample data' } );
+	} catch ( e ) { return; }
+	removingDemo.value = true;
+	try {
+		await api.del( 'demo' );
+		window.location.reload();
+	} catch ( e ) {
+		removingDemo.value = false;
+		error.value = errorMessage( e );
+	}
+};
+const startFresh = async () => {
+	store.freshInstall = false;
+	try { await api.post( 'backups/fresh-dismiss' ); } catch ( e ) { /* the card just stays hidden for this visit */ }
+};
 const filtering = computed( () => chip.value !== 'all' || !! brandId.value );
 
 const attnLink = ( a ) => ( a.kind === 'invoice' ? '#/billing/invoices' : a.kind === 'renewal' ? '#/finance/billing?type=subscription' : '#/finance/billing' );
@@ -178,6 +208,25 @@ const attnKind = ( a ) => ( { renewal: 'Recurring', charge: 'One-off', invoice: 
 
 		<el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="bd-mb" />
 		<el-skeleton v-if="!data && !error" :rows="6" animated />
+
+		<el-alert v-if="store.backupAlert" type="warning" show-icon :closable="false" class="bd-mb" title="The last automatic backup failed.">
+			<span class="bd-small">{{ store.backupAlert }}</span> <a href="#/settings?tab=backup" class="bd-link">Open backup settings</a>
+		</el-alert>
+
+		<el-alert v-if="store.demoLoaded && store.canManage" type="info" show-icon :closable="false" class="bd-mb" title="You are looking at sample data.">
+			<span class="bd-small">When you are ready for your real data, remove it in one click.</span>
+			<el-button size="small" :loading="removingDemo" style="margin-left: 10px" @click="removeDemo">Remove sample data</el-button>
+		</el-alert>
+
+		<el-card v-if="store.freshInstall" shadow="never" class="bd-mb bd-welcome">
+			<div class="bd-widget__head"><span>Welcome to BizyDash</span></div>
+			<p class="bd-muted">Starting from scratch, or moving from another site? If you already have a BizyDash backup, restore it now and your clients, work, invoices and contracts come straight back. You can also do this later in Settings.</p>
+			<div class="bd-mt">
+				<el-button type="primary" @click="navigate( '/settings?tab=backup&restore=1' )">Restore a backup</el-button>
+				<el-button @click="startFresh">Start fresh</el-button>
+				<el-button :loading="loadingDemo" @click="tryDemo">Try with sample data</el-button>
+			</div>
+		</el-card>
 
 		<template v-if="s && b">
 			<el-card v-if="showSetup" shadow="never" class="bd-mb bd-setup">

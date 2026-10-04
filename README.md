@@ -23,6 +23,22 @@ Other things worth knowing:
   mode, and an option to use it as the site's home page.
 - **Roles:** `manage_bizydash` for the team, `bizydash_finance` for money screens, and a "BizyDash team member" role that
   keeps people out of wp-admin.
+- **Backup & restore** (Settings → Backup & restore): manual and automatic (daily/weekly) backups kept on the site,
+  download with an optional password, and restore of any chosen modules. A restore is verified before it replaces
+  anything, takes a safety copy first, and can be undone. A fresh install offers to restore a backup.
+- **Sample data**: a new, empty install can load example clients, invoices and projects to explore, and remove them
+  in one click (Home banner or Settings → General).
+- **Invoice import**: Finance → Invoices → *Import invoices* brings in an Invoice.ng export (.xlsx or .csv) or a Sprout Invoices
+  export (.csv); the platform is detected automatically. A review step for matching or creating clients, and an undo for each import.
+- **Roles & access** (Settings → Roles & access): BD Client, BD Client Manager, BD Work Team, BD Finance Team,
+  BD Contract Team, BD Team Manager (with per-person extra modules) and BD Admin (all of BizyDash, none of WordPress).
+  Give a team member a role from their profile. Every client contact with an email gets a BD Client login linked to
+  their organisation, ready for the client portal; existing clients are linked automatically on update.
+- **Client portal** (`/portal/`, configurable): clients sign in (branded sign-in, password reset, optional emailed
+  invitation) and see only their own organisation: projects with phases and task progress, invoices and payments,
+  bills coming up that are not invoiced yet, and contracts with signing links and signed PDFs. People linked to several
+  clients switch between them. Staff can preview any client's portal. Costs, team pay, notes, drafts and other clients'
+  records are never exposed. What clients see is set in Settings → Client portal.
 - Light, dark and system themes. Money is always shown per currency, with an optional combined estimate.
 
 ## Requirements

@@ -146,6 +146,10 @@ class Modules {
 			if ( ! empty( $d['core'] ) || ! self::enabled( $id ) ) {
 				continue;
 			}
+			$mcap = Roles::module_cap( $id );
+			if ( $mcap && ! current_user_can( $mcap ) && ! current_user_can( 'manage_options' ) ) {
+				continue;
+			}
 			$items = array();
 			foreach ( $d['menu'] as $it ) {
 				if ( ! empty( $it['cap'] ) && ! current_user_can( $it['cap'] ) ) {

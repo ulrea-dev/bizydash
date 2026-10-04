@@ -8,6 +8,7 @@ import RecordDrawer from '../components/RecordDrawer.vue';
 import StatCard from '../components/StatCard.vue';
 import StatusTag from '../components/StatusTag.vue';
 import TeamPay from '../components/TeamPay.vue';
+import TeamAccess from '../components/TeamAccess.vue';
 import Projects from './Projects.vue';
 import Tasks from './Tasks.vue';
 import { avatarStyle, fmtDate, fmtMoney, initials, relDays, today } from '../util';
@@ -151,6 +152,7 @@ const salaryText = computed( () => ( member.value && Number( member.value.salary
 						<el-descriptions-item v-if="member.notes" label="Notes">{{ member.notes }}</el-descriptions-item>
 					</el-descriptions>
 				</el-card>
+				<TeamAccess v-if="store.caps.team" :member-id="id" :has-email="!!member.email" @changed="load" />
 			</el-tab-pane>
 		</el-tabs>
 

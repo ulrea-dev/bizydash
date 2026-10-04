@@ -18,6 +18,9 @@ class Install {
 			return;
 		}
 		$from = (int) get_option( 'bizydash_db_version' );
+		if ( 0 === $from ) {
+			update_option( 'bizydash_fresh_install', '1', false ); // brand-new install: Home offers to restore a backup
+		}
 		Database\Schema::install();
 		Lookups::seed();
 		self::migrate( $from );
@@ -28,6 +31,11 @@ class Install {
 	/** Data back-fills for schema upgrades (columns themselves are added by dbDelta). */
 	private static function migrate( $from ) {
 		global $wpdb;
+		if ( $from > 0 && $from < 21 ) {
+			// Roles arrive in this version: give every existing client contact a client login, a slice at a time.
+			Roles::install();
+			wp_schedule_single_event( time() + 5, 'bizydash_sync_portal_users', array( 0 ) );
+		}
 		if ( $from > 0 && $from < 19 ) {
 			// Existing subscriptions, retainers and one-off bills get the department they already counted under
 			// (the catalog item's, else the client's), and an invoice whose lines all share one department is attached to it.
@@ -116,19 +124,7 @@ class Install {
 		}
 	}
 
-	private static function grant_capability() {
-		$role = get_role( 'administrator' );
-		foreach ( array( 'manage_bizydash', 'bizydash_finance' ) as $cap ) {
-			if ( $role && ! $role->has_cap( $cap ) ) {
-				$role->add_cap( $cap );
-			}
-		}
-		// A role for team members who work in BizyDash but should never see WordPress itself.
-		$staff = get_role( 'bizydash_staff' );
-		if ( ! $staff ) {
-			add_role( 'bizydash_staff', 'BizyDash team member', array( 'read' => true, 'upload_files' => true, 'manage_bizydash' => true ) );
-		} elseif ( ! $staff->has_cap( 'manage_bizydash' ) ) {
-			$staff->add_cap( 'manage_bizydash' );
-		}
+	public static function grant_capability() {
+		Roles::install();
 	}
 }

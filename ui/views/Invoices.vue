@@ -7,6 +7,8 @@ import PaymentsDialog from '../components/PaymentsDialog.vue';
 import SendInvoiceDialog from '../components/SendInvoiceDialog.vue';
 import { invoicesConfig, paymentsConfig } from '../resources';
 import { copyText } from '../util';
+import { store } from '../store';
+import ImportInvoicesDialog from '../components/ImportInvoicesDialog.vue';
 
 const props = defineProps( { fixed: { type: Object, default: () => ( {} ) }, embedded: Boolean, currency: String, reloadKey: { type: Number, default: 0 }, useRouteFilters: Boolean } );
 const emit = defineEmits( [ 'changed' ] );
@@ -17,6 +19,7 @@ const dialog = ref( false );
 const key = ref( 0 );
 const emailing = ref( 0 );
 const emailOpen = ref( false );
+const importing = ref( false );
 
 const changed = () => {
 	key.value++;
@@ -55,9 +58,11 @@ const config = computed( () =>
 				<el-radio-button value="invoices">Invoices</el-radio-button>
 				<el-radio-button value="payments">Payments</el-radio-button>
 			</el-radio-group>
+			<el-button v-if="store.canFinance && view === 'invoices'" size="default" class="bd-import-btn" @click="importing = true">Import invoices…</el-button>
 		</div>
 		<ResourceTable v-if="view === 'invoices'" :config="config" :fixed="fixed" :embedded="embedded" :reload-key="reloadKey + key" :use-route-filters="useRouteFilters" @changed="emit( 'changed' )" />
 		<ResourceTable v-else :config="paymentsConfig()" embedded />
+		<ImportInvoicesDialog v-model="importing" @imported="changed" />
 		<SendInvoiceDialog v-model="emailOpen" :invoice-id="emailing" @sent="changed" />
 		<PaymentsDialog v-model="dialog" :invoice-id="paying" @changed="changed" />
 	</div>

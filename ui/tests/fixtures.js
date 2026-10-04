@@ -76,9 +76,41 @@ export const dashboard = {
 };
 export const chart = { months: [ '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10' ], labels: [ 'May 2026', 'Jun 2026', 'Jul 2026', 'Aug 2026', 'Sep 2026', 'Oct 2026' ], currencies: { NGN: { billed: [ 0, 0, 0, 0, 335000, 0 ], paid: [ 0, 0, 0, 0, 200000, 0 ] }, USD: { billed: [ 0, 0, 0, 0, 450, 0 ], paid: [ 0, 0, 0, 0, 0, 0 ] } } };
 
+export const backups = { items: [ { id: 'a'.repeat( 32 ), type: 'manual', created_at: '2026-10-03 22:50:01', encrypted: false, size: 306829, rows: { core: 417, work: 23, finance: 206, contracts: 187 }, files: 6, files_included: true }, { id: 'b'.repeat( 32 ), type: 'auto', created_at: '2026-10-02 03:00:00', encrypted: true, size: 2048, rows: {} } ], settings: { auto: 'daily', keep: 7, files: true, logs: true, last_ok: '2026-10-02 03:00:00', last_status: 'failed', last_error: 'Disk full' }, health: { zip: true, encryption: true, writable: true, folder: '/x/bizydash-backups', exposed: true, free_bytes: 5000000000, cron_disabled: false } };
+
+export const analysis = { id: 'a'.repeat( 32 ), manifest: { created_at: '2026-10-03 22:50:01', site_url: 'https://x.test', schema_version: 20, files_included: true }, compat: { status: 'migrate', message: 'This backup is from an older version of BizyDash. Your data will be upgraded automatically after it is restored.' }, modules: [
+	{ id: 'core', label: 'Clients, departments & team', desc: 'd', status: 'available', note: '', backup_rows: 417, live_rows: 417, enabled: true, tables: [ { name: 'activity', backup: 10, live: 10, optional: true } ] },
+	{ id: 'work', label: 'Work', desc: 'w', status: 'available', note: '', backup_rows: 23, live_rows: 23, enabled: true, tables: [] },
+	{ id: 'finance', label: 'Finance', desc: 'f', status: 'empty', note: 'This backup has no records for this part. Restoring it would clear the 206 you have now.', backup_rows: 0, live_rows: 206, enabled: true, tables: [] },
+	{ id: 'contracts', label: 'Contracts', desc: 'c', status: 'missing', note: 'This backup has no contracts data at all, so it cannot be restored from it.', backup_rows: 0, live_rows: 187, enabled: true, tables: [] },
+], unsupported: [ 'mystery_table' ], users: { total: 1, unmatched: [] }, files: { count: 6, missing: [] }, settings: true, same_site: false, notes: [ 'The SMTP password is never stored in a backup.' ] };
+
+export const importPreview = { source: 'Sprout Invoices', numbered: false, kinds: { sent: 2, draft: 1, cancelled: 0 }, maybe_duplicates: [ { ref: 'SI:2', label: 'Technext Website Mgt.', client: 'Technext', amount: 100000, currency: 'NGN', issue: '2026-02-20', existing_number: 'DZINV-050', existing_date: '2026-02-21' } ], invoices: 3, duplicates: [], issues: [], totals: { NGN: 300000 }, rows: [ { ref: 'SI:1', number: 'DZINV-02', name: 'Ready Designs', email: 'v@ready-designs.com' }, { ref: 'SI:2', number: 'DZINV-03', name: 'Victor Martins', email: 'v@ready-designs.com' }, { ref: 'SI:3', number: 'DZINV-04', name: 'Technext', email: '' } ], customers: [
+	{ key: 'readydesigns', name: 'Ready Designs', raw_names: [ 'Ready Designs' ], email: 'v@ready-designs.com', invoices: 1, total: { NGN: 100000 }, currency: 'NGN', match: 0, shared_email: [ 'Victor Martins' ] },
+	{ key: 'victormartins', name: 'Victor Martins', raw_names: [ 'Victor Martins' ], email: 'v@ready-designs.com', invoices: 1, total: { NGN: 100000 }, currency: 'NGN', match: 0, shared_email: [ 'Ready Designs' ] },
+	{ key: 'technext', name: 'Technext', raw_names: [ 'Technext' ], email: '', invoices: 1, total: { NGN: 100000 }, currency: 'NGN', match: 7, shared_email: [] },
+], clients: [ { id: 7, name: 'Technext' } ] };
+
+export const access = { roles: [ { key: 'bizydash_client', label: 'BD Client', desc: 'portal', caps: [ 'bizydash_portal' ], users: 3, legacy: false }, { key: 'bizydash_work_team', label: 'BD Work Team', desc: 'work', caps: [ 'manage_bizydash', 'bizydash_work' ], users: 1, legacy: false } ], auto: true, stats: { clients: 25, clients_with_login: 2, portal_users: 2 }, manager_modules: { work: 'Work' } };
+
 /** path (without query) → response factory */
 export const routes = {
 	'/meta': () => meta,
+	'/backups': () => backups,
+	'/clients/1/logins': () => ( { users: [ { id: 9, name: 'Ada Obi', email: 'ada@abc.example', last_login: '', invited: '2026-10-01 10:00:00' } ], enabled: true, portal_url: 'http://localhost/portal/', preview_url: 'http://localhost/portal/?as=1' } ),
+	'POST /clients/1/portal-invite': () => ( { sent: true } ),
+	'/access': () => access,
+	'/team/1/access': () => ( { has_login: true, login: 'zara', is_wp_admin: false, role: 'bizydash_work_team', modules: [], roles: access.roles, manager_modules: access.manager_modules } ),
+	'POST /invoices/import/preview': () => importPreview,
+	'POST /invoices/import/run': () => ( { import_id: 'abc123abc123', created: 3, skipped: 0, errors: [], total_invoices: 3, total_clients: 1 } ),
+	'POST /backups/fresh-dismiss': () => ( { dismissed: true } ),
+	'/backups/fresh-dismiss': () => ( { dismissed: true } ),
+	'POST /backups/analyze': () => analysis,
+	'POST /backups/restore': () => ( { id: 'e'.repeat( 16 ), kind: 'restore', phase: 'safety', progress: 3, done: false } ),
+	'POST /backups/restore-step': () => ( { id: 'e'.repeat( 16 ), kind: 'restore', phase: 'done', progress: 100, done: true, warnings: [ 'Check SMTP' ], result: { restored: { core: 417, work: 23 }, modules: [ 'core', 'work' ], safety_id: 'f'.repeat( 32 ), contracts: { ok: 14, total: 14 }, identical: [ 'a', 'b' ] } } ),
+	'POST /backups': () => ( { id: 'c'.repeat( 16 ), phase: 'data', progress: 10, done: false } ),
+	'/backups/step': () => ( { id: 'c'.repeat( 16 ), phase: 'done', progress: 100, done: true, result: { id: 'd'.repeat( 32 ), rows: { core: 1 }, size: 1000 } } ),
+	'POST /backups/step': () => ( { id: 'c'.repeat( 16 ), phase: 'done', progress: 100, done: true, result: { id: 'd'.repeat( 32 ), rows: { core: 1 }, size: 1000 } } ),
 	'/dashboard': () => dashboard,
 	'/dashboard/chart': () => chart,
 	'/preferences': () => ( { theme: 'light' } ),

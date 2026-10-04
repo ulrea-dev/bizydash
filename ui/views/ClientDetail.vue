@@ -14,6 +14,7 @@ import { avatarStyle, fmtDate, fmtDateTime, fmtMoney, initials, labelOf, colorOf
 import Activity from './Activity.vue';
 import ClientLedger from './ClientLedger.vue';
 import ClientContacts from './ClientContacts.vue';
+import ClientPortalCard from '../components/ClientPortalCard.vue';
 import ResourceTable from '../components/ResourceTable.vue';
 import { contractsConfig } from '../resources';
 import Invoices from './Invoices.vue';
@@ -202,6 +203,7 @@ const saveClient = async ( values ) => {
 			<el-tab-pane name="contacts" lazy>
 				<template #label>Contacts<span v-if="client.contacts && client.contacts.length" class="bd-tabcount">{{ client.contacts.length }}</span></template>
 				<ClientContacts :client-id="id" :reload-key="tick" @changed="refresh" />
+				<ClientPortalCard :client-id="id" :reload-key="tick" />
 			</el-tab-pane>
 
 			<el-tab-pane label="History" name="history" lazy>

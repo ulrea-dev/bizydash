@@ -50,6 +50,19 @@ class Custom_Routes {
 		} elseif ( preg_match( '#/analytics$#', $route ) && ! \BizyDash\Modules::analytics_on( $module ) ) {
 			return; // the module's Analytics page is switched off
 		}
+		$mcap = \BizyDash\Roles::module_cap( $module );
+		if ( $mcap ) {
+			// Routes that any BizyDash user could call become module routes: only people with that module's capability.
+			$wrap = function ( $a ) use ( $mcap ) {
+				if ( isset( $a['permission_callback'] ) && array( Resource_Controller::class, 'can' ) === $a['permission_callback'] ) {
+					$a['permission_callback'] = function () use ( $mcap ) {
+						return current_user_can( 'manage_bizydash' ) && current_user_can( $mcap );
+					};
+				}
+				return $a;
+			};
+			$args = isset( $args['methods'] ) ? $wrap( $args ) : array_map( $wrap, $args );
+		}
 		if ( \BizyDash\Modules::enabled( $module ) ) {
 			register_rest_route( self::NS, $route, $args );
 		}
@@ -137,8 +150,45 @@ class Custom_Routes {
 		self::reg( '/currencies/usage', array( 'methods' => 'GET', 'callback' => function () { return rest_ensure_response( \BizyDash\Services\Currency::usage() ); }, 'permission_callback' => $perm ) );
 		self::reg( '/modules', array(
 			array( 'methods' => 'GET', 'callback' => function () { return rest_ensure_response( \BizyDash\Modules::catalog() ); }, 'permission_callback' => $perm ),
-			array( 'methods' => 'POST,PUT', 'callback' => array( __CLASS__, 'modules_save' ), 'permission_callback' => function () { return current_user_can( 'manage_options' ); } ),
+			array( 'methods' => 'POST,PUT', 'callback' => array( __CLASS__, 'modules_save' ), 'permission_callback' => function () { return \BizyDash\Roles::can_admin(); } ),
 		) );
+		$admin = function () { return \BizyDash\Roles::can_admin(); };
+		$fin = function () { return current_user_can( 'bizydash_finance' ); };
+		self::reg( '/invoices/import/preview', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'import_preview' ), 'permission_callback' => $fin ) );
+		self::reg( '/invoices/import/run', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'import_run' ), 'permission_callback' => $fin ) );
+		self::reg( '/invoices/import/history', array( 'methods' => 'GET', 'callback' => function () { return rest_ensure_response( \BizyDash\Import\Invoice_Import::history() ); }, 'permission_callback' => $fin ) );
+		self::reg( '/invoices/import/(?P<id>[a-f0-9]{6,32})/undo', array( 'methods' => 'POST', 'callback' => function ( \WP_REST_Request $req ) { $r = \BizyDash\Import\Invoice_Import::undo( (string) $req['id'] ); return is_wp_error( $r ) ? $r : rest_ensure_response( $r ); }, 'permission_callback' => $fin ) );
+		self::reg( '/demo', array(
+			array( 'methods' => 'GET', 'callback' => function () { return rest_ensure_response( \BizyDash\Services\Demo_Data::status() ); }, 'permission_callback' => $admin ),
+			array( 'methods' => 'POST', 'callback' => function () { $r = \BizyDash\Services\Demo_Data::load(); delete_option( 'bizydash_fresh_install' ); return is_wp_error( $r ) ? $r : rest_ensure_response( $r ); }, 'permission_callback' => $admin ),
+			array( 'methods' => 'DELETE', 'callback' => function () { return rest_ensure_response( \BizyDash\Services\Demo_Data::clear() ); }, 'permission_callback' => $admin ),
+		) );
+		self::reg( '/access', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'access_overview' ), 'permission_callback' => $admin ) );
+		self::reg( '/access/sync-clients', array( 'methods' => 'POST', 'callback' => function ( \WP_REST_Request $req ) { $p = (array) $req->get_json_params(); return rest_ensure_response( \BizyDash\Services\Portal_Users::sync_all( (int) ( $p['after'] ?? 0 ), 100 ) ); }, 'permission_callback' => $admin ) );
+		self::reg( '/team/(?P<id>\d+)/access', array(
+			array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'team_access_get' ), 'permission_callback' => function () { return current_user_can( 'bizydash_team' ); } ),
+			array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'team_access_set' ), 'permission_callback' => function () { return current_user_can( 'bizydash_team' ); } ),
+		) );
+		self::reg( '/clients/(?P<id>\d+)/logins', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'client_logins' ), 'permission_callback' => $perm ) );
+		self::reg( '/clients/(?P<id>\d+)/portal-invite', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'client_invite' ), 'permission_callback' => function () { return current_user_can( 'bizydash_clients' ); } ) );
+		self::reg( '/backups', array(
+			array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'backups_list' ), 'permission_callback' => $admin ),
+			array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_start' ), 'permission_callback' => $admin ),
+		) );
+		self::reg( '/backups/step', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_step' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/rescan', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_rescan' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/settings', array(
+			array( 'methods' => 'GET', 'callback' => function () { return rest_ensure_response( \BizyDash\Backup\Backup_Manager::settings() ); }, 'permission_callback' => $admin ),
+			array( 'methods' => 'POST,PUT', 'callback' => function ( \WP_REST_Request $req ) { return rest_ensure_response( \BizyDash\Backup\Backup_Manager::save_settings( (array) $req->get_json_params() ) ); }, 'permission_callback' => $admin ),
+		) );
+		self::reg( '/backups/fresh-dismiss', array( 'methods' => 'POST', 'callback' => function () { delete_option( 'bizydash_fresh_install' ); return rest_ensure_response( array( 'dismissed' => true ) ); }, 'permission_callback' => $admin ) );
+		self::reg( '/backups/analyze', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_analyze' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/restore', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_restore' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/restore-step', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_restore_step' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/restore-cancel', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_restore_cancel' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/upload', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_upload' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/(?P<id>[a-f0-9]{32})', array( 'methods' => 'DELETE', 'callback' => array( __CLASS__, 'backups_delete' ), 'permission_callback' => $admin ) );
+		self::reg( '/backups/(?P<id>[a-f0-9]{32})/download-token', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'backups_link' ), 'permission_callback' => $admin ) );
 		self::reg( '/departments/overview', array( 'methods' => 'GET', 'callback' => function ( \WP_REST_Request $req ) {
 			return rest_ensure_response( \BizyDash\Services\DepartmentOverview::all( array( 'from' => (string) $req->get_param( 'from' ), 'to' => (string) $req->get_param( 'to' ) ) ) );
 		}, 'permission_callback' => $perm ) );
@@ -177,7 +227,7 @@ class Custom_Routes {
 		self::reg( '/settings',
 			array(
 				array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'settings_get' ), 'permission_callback' => $perm ),
-				array( 'methods' => 'POST,PUT', 'callback' => array( __CLASS__, 'settings_save' ), 'permission_callback' => $perm ),
+				array( 'methods' => 'POST,PUT', 'callback' => array( __CLASS__, 'settings_save' ), 'permission_callback' => function () { return \BizyDash\Roles::can_admin(); } ),
 			)
 		);
 		self::reg( '/renewals/(?P<id>\d+)/mark-renewed', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'mark_renewed' ), 'permission_callback' => $perm ) );
@@ -268,6 +318,192 @@ class Custom_Routes {
 				)
 			)
 		);
+	}
+
+	public static function import_preview( \WP_REST_Request $req ) {
+		$f = $req->get_file_params();
+		if ( empty( $f['file']['tmp_name'] ) ) {
+			return new \WP_Error( 'bd_import_file', 'Choose the file exported from Invoice.ng.', array( 'status' => 400 ) );
+		}
+		$p = \BizyDash\Import\Invoice_Import::parse( $f['file']['tmp_name'], (string) $f['file']['name'] );
+		if ( is_wp_error( $p ) ) {
+			return $p;
+		}
+		$out         = \BizyDash\Import\Invoice_Import::preview( $p );
+		$out['rows'] = $p['rows'];
+		return rest_ensure_response( $out );
+	}
+
+	public static function import_run( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Import\Invoice_Import::run( (array) ( $p['rows'] ?? array() ), (array) ( $p['plan'] ?? array() ), (string) ( $p['import_id'] ?? '' ) );
+		if ( ! is_wp_error( $r ) && ! empty( $p['last'] ) ) {
+			\BizyDash\Import\Invoice_Import::finish( $r['import_id'] );
+		}
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	private static function role_options() {
+		$out = array();
+		foreach ( \BizyDash\Roles::roles() as $k => $r ) {
+			if ( ! empty( $r['internal'] ) ) {
+				$out[] = array( 'key' => $k, 'label' => $r['label'], 'desc' => $r['desc'], 'legacy' => ! empty( $r['legacy'] ) );
+			}
+		}
+		return $out;
+	}
+
+	public static function access_overview() {
+		$roles = array();
+		foreach ( \BizyDash\Roles::roles() as $k => $r ) {
+			$caps = array_keys( array_filter( $r['caps'] ) );
+			$roles[] = array( 'key' => $k, 'label' => $r['label'], 'desc' => $r['desc'], 'caps' => array_values( array_diff( $caps, array( 'read', 'upload_files' ) ) ), 'users' => count( get_users( array( 'role' => $k, 'fields' => 'ID' ) ) ), 'legacy' => ! empty( $r['legacy'] ) );
+		}
+		return rest_ensure_response( array( 'roles' => $roles, 'auto' => \BizyDash\Services\Portal_Users::enabled(), 'stats' => \BizyDash\Services\Portal_Users::stats(), 'manager_modules' => array_map( function ( $m ) { return $m['label']; }, \BizyDash\Roles::MANAGER_MODULES ) ) );
+	}
+
+	private static function team_user( $team_id ) {
+		global $wpdb;
+		return $wpdb->get_row( $wpdb->prepare( 'SELECT id, name, email, wp_user_id FROM ' . Schema::table( 'team_members' ) . ' WHERE id=%d', $team_id ), ARRAY_A ); // phpcs:ignore WordPress.DB
+	}
+
+	public static function team_access_get( \WP_REST_Request $req ) {
+		$m = self::team_user( (int) $req['id'] );
+		if ( ! $m ) {
+			return new \WP_Error( 'bd_missing', 'Team member not found.', array( 'status' => 404 ) );
+		}
+		$uid  = (int) $m['wp_user_id'];
+		list( $role, $mods ) = $uid ? \BizyDash\Roles::role_of( $uid ) : array( '', array() );
+		$u = $uid ? get_userdata( $uid ) : null;
+		return rest_ensure_response( array( 'has_login' => (bool) $u, 'login' => $u ? $u->user_login : '', 'is_wp_admin' => $u ? user_can( $u, 'manage_options' ) : false, 'role' => $role, 'modules' => $mods, 'roles' => self::role_options(), 'manager_modules' => array_map( function ( $x ) { return $x['label']; }, \BizyDash\Roles::MANAGER_MODULES ) ) );
+	}
+
+	public static function team_access_set( \WP_REST_Request $req ) {
+		global $wpdb;
+		$m = self::team_user( (int) $req['id'] );
+		if ( ! $m ) {
+			return new \WP_Error( 'bd_missing', 'Team member not found.', array( 'status' => 404 ) );
+		}
+		$p    = (array) $req->get_json_params();
+		$role = (string) ( $p['role'] ?? '' );
+		$uid  = (int) $m['wp_user_id'];
+		if ( ! $uid || ! get_userdata( $uid ) ) {
+			if ( '' === $role ) {
+				return rest_ensure_response( array( 'ok' => true ) );
+			}
+			$email = sanitize_email( $m['email'] );
+			if ( ! $email ) {
+				return new \WP_Error( 'bd_email', 'Add an email address to this person first.', array( 'status' => 400 ) );
+			}
+			$ex = get_user_by( 'email', $email );
+			if ( $ex ) {
+				$uid = (int) $ex->ID;
+			} else {
+				$uid = wp_insert_user( array( 'user_login' => sanitize_user( strstr( $email, '@', true ) . wp_rand( 10, 99 ), true ), 'user_email' => $email, 'user_pass' => wp_generate_password( 32, true, true ), 'display_name' => $m['name'], 'role' => '' ) );
+				if ( is_wp_error( $uid ) ) {
+					return $uid;
+				}
+				update_user_meta( $uid, 'show_admin_bar_front', 'false' );
+				if ( ! empty( $p['notify'] ) ) {
+					wp_new_user_notification( $uid, null, 'user' );
+				}
+			}
+			$wpdb->update( Schema::table( 'team_members' ), array( 'wp_user_id' => $uid ), array( 'id' => (int) $m['id'] ) );
+		}
+		$r = \BizyDash\Roles::assign( $uid, $role, (array) ( $p['modules'] ?? array() ) );
+		if ( is_wp_error( $r ) ) {
+			return $r;
+		}
+		return self::team_access_get( $req );
+	}
+
+	public static function client_logins( \WP_REST_Request $req ) {
+		$id  = (int) $req['id'];
+		$out = array();
+		foreach ( \BizyDash\Services\Portal_Users::users_for_client( $id ) as $u ) {
+			$last      = (int) get_user_meta( $u['id'], 'bizydash_last_login', true );
+			$inv       = (int) get_user_meta( $u['id'], 'bizydash_portal_invited', true );
+			$u['last_login'] = $last ? gmdate( 'Y-m-d H:i:s', $last ) : '';
+			$u['invited']    = $inv ? gmdate( 'Y-m-d H:i:s', $inv ) : '';
+			$out[] = $u;
+		}
+		return rest_ensure_response( array( 'users' => $out, 'enabled' => \BizyDash\Portal::enabled(), 'portal_url' => \BizyDash\Portal::url(), 'preview_url' => \BizyDash\Portal::url( '', array( 'as' => $id ) ) ) );
+	}
+
+	public static function client_invite( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$uid = (int) ( $p['user_id'] ?? 0 );
+		if ( ! in_array( $uid, \BizyDash\Services\Portal_Users::users_for_client( (int) $req['id'], false ), true ) ) {
+			return new \WP_Error( 'bd_invite', 'That person is not a login for this client.', array( 'status' => 400 ) );
+		}
+		$r = \BizyDash\Portal::invite( $uid );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( array( 'sent' => true ) );
+	}
+
+	public static function backups_list() {
+		$m = \BizyDash\Backup\Backup_Manager::class;
+		return rest_ensure_response( array( 'items' => $m::store()->all(), 'settings' => $m::settings(), 'health' => $m::health(), 'active' => $m::active() ) );
+	}
+
+	public static function backups_start( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Backup_Manager::start( 'manual', array( 'files' => ! isset( $p['files'] ) || $p['files'], 'logs' => ! isset( $p['logs'] ) || $p['logs'], 'encrypt' => ! empty( $p['encrypt'] ) ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	public static function backups_step( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Backup_Manager::step( preg_replace( '/[^a-f0-9]/', '', (string) ( $p['job'] ?? '' ) ), (string) ( $p['password'] ?? '' ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	public static function backups_analyze( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Importer::analyze( (string) ( $p['id'] ?? '' ), (string) ( $p['password'] ?? '' ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	public static function backups_restore( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Importer::start( (string) ( $p['id'] ?? '' ), (string) ( $p['password'] ?? '' ), (array) ( $p['modules'] ?? array() ), (array) ( $p['opts'] ?? array() ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	public static function backups_restore_step( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Importer::step( (string) ( $p['job'] ?? '' ), (string) ( $p['password'] ?? '' ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	public static function backups_restore_cancel( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Importer::cancel( (string) ( $p['job'] ?? '' ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( array( 'cancelled' => true ) );
+	}
+
+	public static function backups_upload( \WP_REST_Request $req ) {
+		$files = $req->get_file_params();
+		if ( empty( $files['file']['tmp_name'] ) ) {
+			return new \WP_Error( 'bd_upload', 'No file piece was received.', array( 'status' => 400 ) );
+		}
+		$r = \BizyDash\Backup\Backup_Manager::receive_chunk( (string) $req->get_param( 'upload' ), (int) $req->get_param( 'index' ), (int) $req->get_param( 'total' ), $files['file']['tmp_name'] );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
+	}
+
+	public static function backups_rescan() {
+		$n = \BizyDash\Backup\Backup_Manager::rescan();
+		return rest_ensure_response( array( 'added' => $n ) );
+	}
+
+	public static function backups_delete( \WP_REST_Request $req ) {
+		\BizyDash\Backup\Backup_Manager::store()->delete( (string) $req['id'] );
+		return rest_ensure_response( array( 'deleted' => true ) );
+	}
+
+	public static function backups_link( \WP_REST_Request $req ) {
+		$p = (array) $req->get_json_params();
+		$r = \BizyDash\Backup\Backup_Download::make_link( (string) $req['id'], (string) ( $p['password'] ?? '' ) );
+		return is_wp_error( $r ) ? $r : rest_ensure_response( $r );
 	}
 
 	public static function modules_save( \WP_REST_Request $req ) {

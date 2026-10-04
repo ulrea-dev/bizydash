@@ -858,3 +858,4 @@ html.dark .el-radio-button__original-radio:checked + .el-radio-button__inner { b
 .bd-deptcard__money > div { display: flex; flex-direction: column; gap: 1px; }
 .bd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 #bizydash-root a.bd-deptcard, #bizydash-root a.bd-deptcard:hover { color: var(--bd-ink); } #bizydash-root a.bd-deptcard .bd-money-line { color: var(--bd-ink); font-weight: 500; }
+.bd-import-btn { margin-left: auto; }

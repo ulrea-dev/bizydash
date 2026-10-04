@@ -54,6 +54,7 @@ export const api = {
 	create: ( res, data ) => request( 'POST', `/${ res }`, { data } ),
 	update: ( res, id, data ) => request( 'PUT', `/${ res }/${ id }`, { data } ),
 	remove: ( res, id ) => request( 'DELETE', `/${ res }/${ id }` ),
+	del: ( path ) => request( 'DELETE', `/${ path }` ),
 	post: ( path, data ) => request( 'POST', `/${ path }`, { data: data || {} } ),
 	upload: ( path, form ) => request( 'POST', `/${ path }`, { form } ),
 	getPath: ( path, params ) => request( 'GET', `/${ path }`, { params } ),

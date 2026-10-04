@@ -1,12 +1,15 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, ArrowUp, ArrowDown } from '@element-plus/icons-vue';
 import { api, errorMessage, refreshMeta } from '../api';
 import { store } from '../store';
 import PageHeader from '../components/PageHeader.vue';
 import ResourceTable from '../components/ResourceTable.vue';
 import AttachmentField from '../components/AttachmentField.vue';
+import BackupRestore from '../components/BackupRestore.vue';
+import RolesAccess from '../components/RolesAccess.vue';
+import PortalSettings from '../components/PortalSettings.vue';
 import { brandsConfig, lookupsConfig } from '../resources';
 import { navigate } from '../store';
 import { dept } from '../util';
@@ -28,6 +31,20 @@ if ( ! form.base_currency ) form.base_currency = form.default_currency;
 const usage = ref( {} );
 const saving = ref( false );
 const tab = ref( props.initialTab );
+const removingDemo = ref( false );
+async function removeDemo() {
+	try {
+		await ElMessageBox.confirm( 'Remove all the sample clients, invoices, projects and everything else that came with them? Anything you added yourself stays.', 'Remove sample data', { type: 'warning', confirmButtonText: 'Remove sample data' } );
+	} catch ( e ) { return; }
+	removingDemo.value = true;
+	try {
+		await api.del( 'demo' );
+		window.location.reload();
+	} catch ( e ) {
+		removingDemo.value = false;
+		ElMessage.error( errorMessage( e ) );
+	}
+}
 const lookupType = ref( LOOKUP_TYPES[ 0 ].id );
 const lookupCfg = computed( () => lookupsConfig( lookupType.value ) );
 const codeOptions = computed( () => ( form.currencies || [] ).filter( ( c ) => c.code && c.code.length === 3 ) );
@@ -215,6 +232,8 @@ const save = async () => {
 							<el-col :xs="24" :sm="12"><el-form-item label="Next invoice number"><el-input-number v-model="form.invoice_next" :min="1" controls-position="right" style="width: 100%" /></el-form-item></el-col>
 							<el-col :xs="24" :sm="12"><el-form-item label="Default invoice terms (days)"><el-input-number v-model="form.default_due_days" :min="0" controls-position="right" style="width: 100%" /></el-form-item></el-col>
 							<el-col :span="24"><el-form-item label="Data"><el-switch v-model="form.delete_on_uninstall" active-text="Delete all BizyDash data when the plugin is deleted" /></el-form-item></el-col>
+							<el-col v-if="store.demoLoaded && store.canManage" :span="24"><el-form-item label="Sample data"><el-button :loading="removingDemo" @click="removeDemo">Remove sample data</el-button><div class="bd-help">The example clients, invoices and projects added for you to explore. Things you added yourself are kept.</div></el-form-item></el-col>
+							<el-col v-if="form.delete_on_uninstall" :span="24"><el-form-item label="Backups"><el-switch v-model="form.delete_backups_on_uninstall" active-text="Also delete saved backups" /><div class="bd-help">Off by default, so a backup survives even if you remove the plugin and its data.</div></el-form-item></el-col>
 						</el-row>
 					</el-form>
 					<el-button type="primary" :loading="saving" @click="save">Save settings</el-button>
@@ -444,6 +463,18 @@ const save = async () => {
 					<el-radio-group v-model="lookupType" class="bd-mb"><el-radio-button v-for="t in LOOKUP_TYPES" :key="t.id" :value="t.id">{{ t.label }}</el-radio-button></el-radio-group>
 					<ResourceTable :key="lookupType" :config="lookupCfg" :fixed="{ type: lookupType }" embedded @changed="refreshMeta" />
 				</el-card>
+			</el-tab-pane>
+
+			<el-tab-pane v-if="store.canManage" label="Client portal" name="portal" lazy>
+				<PortalSettings />
+			</el-tab-pane>
+
+			<el-tab-pane v-if="store.canManage" label="Roles & access" name="access" lazy>
+				<RolesAccess />
+			</el-tab-pane>
+
+			<el-tab-pane v-if="store.canManage" label="Backup & restore" name="backup" lazy>
+				<BackupRestore />
 			</el-tab-pane>
 		</el-tabs>
 	</div>

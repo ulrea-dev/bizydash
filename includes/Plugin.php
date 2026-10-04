@@ -21,9 +21,23 @@ class Plugin {
 		return $pages;
 	}
 
+	/** A brand-new, still-empty install, shown to administrators only: Home offers to restore a backup. */
+	public static function is_fresh_install() {
+		global $wpdb;
+		if ( ! get_option( 'bizydash_fresh_install' ) || ! Roles::can_admin() ) {
+			return false;
+		}
+		return 0 === (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Database\Schema::table( 'clients' ) ); // phpcs:ignore WordPress.DB
+	}
+
 	public static function boot() {
 		Install::maybe_upgrade();
 		Cron::init();
+		Backup\Backup_Manager::init();
+		Backup\Backup_Download::init();
+		Backup\CLI::register();
+		Portal::init();
+		add_action( 'bizydash_sync_portal_users', array( Services\Portal_Users::class, 'cron_sync' ) );
 
 		if ( Modules::enabled( 'finance' ) ) {
 			Public_Invoice::init();
@@ -43,6 +57,7 @@ class Plugin {
 		// Team members who only work in BizyDash never see WordPress.
 		add_filter( 'show_admin_bar', array( __CLASS__, 'hide_admin_bar' ) );
 		add_action( 'admin_init', array( __CLASS__, 'confine_staff' ) );
+		add_action( 'admin_init', array( __CLASS__, 'confine_clients' ) );
 		add_filter( 'login_redirect', array( __CLASS__, 'login_redirect' ), 10, 3 );
 	}
 
@@ -132,8 +147,28 @@ class Plugin {
 		return Settings::get( 'app_frontend' ) ? App_Page::url() : admin_url( 'admin.php?page=' . self::PAGE );
 	}
 
+	/** A client login (BD Client): portal only, never WordPress admin or the internal app. */
+	public static function is_client_only() {
+		return is_user_logged_in() && current_user_can( 'bizydash_portal' ) && ! current_user_can( 'manage_bizydash' ) && ! current_user_can( 'manage_options' );
+	}
+
 	public static function hide_admin_bar( $show ) {
+		if ( self::is_client_only() ) {
+			return false;
+		}
 		return ( Settings::get( 'app_keep_staff' ) && self::is_staff_only() ) ? false : $show;
+	}
+
+	public static function confine_clients() {
+		if ( ! self::is_client_only() || wp_doing_ajax() || wp_doing_cron() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+			return;
+		}
+		global $pagenow;
+		if ( in_array( $pagenow, array( 'admin-post.php', 'admin-ajax.php' ), true ) ) {
+			return;
+		}
+		wp_safe_redirect( Portal::enabled() ? Portal::url() : home_url( '/' ) );
+		exit;
 	}
 
 	public static function confine_staff() {
@@ -152,6 +187,9 @@ class Plugin {
 	}
 
 	public static function login_redirect( $to, $requested, $user ) {
+		if ( $user instanceof \WP_User && user_can( $user, 'bizydash_portal' ) && ! user_can( $user, 'manage_bizydash' ) && Portal::enabled() ) {
+			return Portal::url();
+		}
 		if ( $user instanceof \WP_User && Settings::get( 'app_keep_staff' ) && user_can( $user, 'manage_bizydash' ) && ! user_can( $user, 'manage_options' ) ) {
 			return self::home_for_staff();
 		}
@@ -184,7 +222,11 @@ class Plugin {
 			'adminUrl'     => admin_url(),
 			'appUrl'       => App_Page::url(),
 			'logoutUrl'    => ( $frontend && Settings::get( 'app_login' ) ) ? App_Login::logout_url() : wp_specialchars_decode( wp_logout_url(), ENT_QUOTES ),
-			'canManage'    => current_user_can( 'manage_options' ),
+			'canManage'    => Roles::can_admin(),
+			'caps'         => Roles::ui_caps(),
+			'freshInstall' => self::is_fresh_install(),
+			'demoLoaded'   => Roles::can_admin() && Services\Demo_Data::status()['loaded'],
+			'backupAlert'  => ( Roles::can_admin() && 'failed' === Backup\Backup_Manager::settings()['last_status'] ) ? (string) Backup\Backup_Manager::settings()['last_error'] : '',
 			'staffOnly'    => self::is_staff_only(),
 			'user'         => $u->display_name,
 			'userEmail'    => $u->user_email,

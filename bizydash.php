@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: BizyDash
- * Description: Agency operations dashboard — clients, services, renewals, pending charges, invoices and payments in one place.
- * Version: 1.0.0
+ * Description: Agency operations in one app — clients, team, work, billing, payroll and e-signed contracts, with built-in backup and restore.
+ * Version: 1.4.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: Digitalzooks
@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'BIZYDASH_VERSION', '1.0.0' );
+define( 'BIZYDASH_VERSION', '1.4.0' );
 define( 'BIZYDASH_DB_VERSION', '3' );
 define( 'BIZYDASH_FILE', __FILE__ );
 define( 'BIZYDASH_DIR', plugin_dir_path( __FILE__ ) );

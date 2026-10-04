@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
 class Schema {
 
 	/** Bump when the SQL below changes. Lives next to the SQL so a stale opcache can never report a newer version than it can create. */
-	const VERSION = '20';
+	const VERSION = '21';
 
 	public static function table( $name ) {
 		global $wpdb;

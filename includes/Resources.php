@@ -131,6 +131,7 @@ class Resources {
 							$wpdb->insert( $ct, array( 'client_id' => $row['id'], 'name' => $row['contact_person'] ? $row['contact_person'] : $row['company_name'], 'email' => $row['email'], 'phone' => $row['phone'], 'kind' => 'primary', 'created_by' => get_current_user_id(), 'created_at' => $now, 'updated_at' => $now ) );
 						}
 					}
+					\BizyDash\Services\Portal_Users::sync_client( $row['id'] );
 					if ( ! isset( $params['brand_ids'] ) || ! is_array( $params['brand_ids'] ) ) {
 						return;
 					}
@@ -170,6 +171,7 @@ class Resources {
 					global $wpdb;
 					$wpdb->delete( Schema::table( 'client_brands' ), array( 'client_id' => $row['id'] ) );
 					$wpdb->delete( Schema::table( 'client_contacts' ), array( 'client_id' => $row['id'] ) );
+					\BizyDash\Services\Portal_Users::unlink_client( $row['id'] );
 				},
 			),
 

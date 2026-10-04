@@ -16,8 +16,36 @@ class App_Login {
 	/** True while we send the reset email ourselves, so its link points at the app and not at wp-login.php. */
 	private static $from_app = false;
 
+	/** When set, the pages belong to the client portal instead of the team app. */
+	private static $portal = false;
+	private static $base   = '';
+
+	/** Where these pages live: the app, or the client portal when serving it. */
+	public static function base() {
+		return self::$base ? self::$base : App_Page::url();
+	}
+
+	/** Email a client a password-reset link that opens on the portal (used by "Send invite" and the account page). */
+	public static function send_portal_reset( $login ) {
+		self::$portal   = true;
+		self::$base     = Portal::url();
+		self::$from_app = true;
+		$r              = retrieve_password( $login );
+		self::$from_app = false;
+		self::$portal   = false;
+		self::$base     = '';
+		return $r;
+	}
+
+	/** Serve the sign-in / reset pages for the client portal (called by Portal). */
+	public static function route_for_portal( $portal_url ) {
+		self::$portal = true;
+		self::$base   = $portal_url;
+		self::route();
+	}
+
 	public static function init() {
-		if ( ! Settings::get( 'app_frontend' ) || ! Settings::get( 'app_login' ) ) {
+		if ( ( ! Settings::get( 'app_frontend' ) || ! Settings::get( 'app_login' ) ) && ! Settings::get( 'portal_enabled' ) ) {
 			return;
 		}
 		add_action( 'wp_login_failed', array( __CLASS__, 'failed' ) );
@@ -29,7 +57,8 @@ class App_Login {
 		if ( empty( $_POST['bd_login'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 			return;
 		}
-		wp_safe_redirect( add_query_arg( 'bd_error', '1', App_Page::url() ) );
+		$to = ! empty( $_POST['bd_portal'] ) ? Portal::url() : App_Page::url(); // phpcs:ignore WordPress.Security.NonceVerification
+		wp_safe_redirect( add_query_arg( 'bd_error', '1', $to ) );
 		exit;
 	}
 
@@ -51,7 +80,7 @@ class App_Login {
 			} elseif ( 'reset' === $action ) {
 				self::handle_reset();
 			}
-			wp_safe_redirect( App_Page::url() );
+			wp_safe_redirect( self::base() );
 			exit;
 		}
 
@@ -61,9 +90,9 @@ class App_Login {
 			$key   = preg_replace( '/[^a-zA-Z0-9]/', '', wp_unslash( $_GET['key'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
 			if ( ! is_wp_error( check_password_reset_key( $key, $login ) ) ) {
 				self::set_reset_cookie( $login, $key );
-				wp_safe_redirect( add_query_arg( 'bd_view', 'reset', App_Page::url() ) );
+				wp_safe_redirect( add_query_arg( 'bd_view', 'reset', self::base() ) );
 			} else {
-				wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'expired' ), App_Page::url() ) );
+				wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'expired' ), self::base() ) );
 			}
 			exit;
 		}
@@ -75,7 +104,7 @@ class App_Login {
 			if ( $user ) {
 				self::render( 'reset' );
 			} else {
-				wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'expired' ), App_Page::url() ) );
+				wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'expired' ), self::base() ) );
 				exit;
 			}
 		} else {
@@ -90,7 +119,7 @@ class App_Login {
 	}
 
 	private static function cookie_path() {
-		$p = wp_parse_url( App_Page::url(), PHP_URL_PATH );
+		$p = wp_parse_url( self::base(), PHP_URL_PATH );
 		return $p ? $p : '/';
 	}
 
@@ -115,7 +144,7 @@ class App_Login {
 
 	private static function handle_forgot() {
 		if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ), 'bd_forgot' ) ) {
-			wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'nonce' ), App_Page::url() ) );
+			wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'nonce' ), self::base() ) );
 			exit;
 		}
 		$login = isset( $_POST['user_login'] ) ? sanitize_text_field( wp_unslash( $_POST['user_login'] ) ) : '';
@@ -129,7 +158,7 @@ class App_Login {
 			retrieve_password( $login ); // errors are deliberately ignored: the answer never reveals whether an account exists
 			self::$from_app = false;
 		}
-		wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_sent' => '1' ), App_Page::url() ) );
+		wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_sent' => '1' ), self::base() ) );
 		exit;
 	}
 
@@ -140,15 +169,16 @@ class App_Login {
 		}
 		$name = (string) Settings::get( 'business_name' );
 		$name = $name ? $name : wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES );
-		$url  = add_query_arg( array( 'key' => $key, 'login' => rawurlencode( $user_login ) ), App_Page::url() );
-		return "Hi,\r\n\r\nSomeone asked to reset the password for your {$name} account:\r\n\r\n{$user_login}\r\n\r\nIf that wasn't you, you can ignore this email — nothing will change.\r\n\r\nTo choose a new password, open this link:\r\n\r\n{$url}\r\n\r\nThe link works for a limited time.\r\n";
+		$what = self::$portal ? 'client portal account' : 'account';
+		$url  = add_query_arg( array( 'key' => $key, 'login' => rawurlencode( $user_login ) ), self::base() );
+		return "Hi,\r\n\r\nSomeone asked to reset the password for your {$name} {$what}:\r\n\r\n{$user_login}\r\n\r\nIf that wasn't you, you can ignore this email — nothing will change.\r\n\r\nTo choose a new password, open this link:\r\n\r\n{$url}\r\n\r\nThe link works for a limited time.\r\n";
 	}
 
 	private static function handle_reset() {
-		$back = add_query_arg( 'bd_view', 'reset', App_Page::url() );
+		$back = add_query_arg( 'bd_view', 'reset', self::base() );
 		$user = self::reset_user();
 		if ( ! $user ) {
-			wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'expired' ), App_Page::url() ) );
+			wp_safe_redirect( add_query_arg( array( 'bd_view' => 'forgot', 'bd_error' => 'expired' ), self::base() ) );
 			exit;
 		}
 		if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ), 'bd_reset' ) ) {
@@ -171,7 +201,7 @@ class App_Login {
 		}
 		reset_password( $user, $p1 );
 		self::clear_reset_cookie();
-		wp_safe_redirect( add_query_arg( 'bd_msg', 'reset', App_Page::url() ) );
+		wp_safe_redirect( add_query_arg( 'bd_msg', 'reset', self::base() ) );
 		exit;
 	}
 
@@ -181,7 +211,7 @@ class App_Login {
 		$name  = (string) Settings::get( 'business_name' );
 		$logo  = (string) Settings::get( 'business_logo_url' );
 		$base  = BIZYDASH_URL . 'assets/fonts/';
-		$app   = App_Page::url();
+		$app   = self::base();
 		$err   = isset( $_GET['bd_error'] ) ? sanitize_key( wp_unslash( $_GET['bd_error'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
 		$msg   = isset( $_GET['bd_msg'] ) ? sanitize_key( wp_unslash( $_GET['bd_msg'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
 		$sent  = isset( $_GET['bd_sent'] ); // phpcs:ignore WordPress.Security.NonceVerification
@@ -272,7 +302,7 @@ a:hover{color:var(--muted)}
 	<div class="card">
 		<h1><?php echo esc_html( $titles[ $view ] ); ?></h1>
 		<?php if ( 'login' === $view ) : ?>
-			<p class="sub"><?php echo esc_html( $name ? 'to ' . $name : 'to your workspace' ); ?></p>
+			<p class="sub"><?php echo esc_html( self::$portal ? ( $name ? 'to your ' . $name . ' client portal' : 'to your client portal' ) : ( $name ? 'to ' . $name : 'to your workspace' ) ); ?></p>
 		<?php elseif ( 'forgot' === $view ) : ?>
 			<p class="sub">Enter your email or username and we’ll send you a link.</p>
 		<?php else : ?>
@@ -304,6 +334,7 @@ a:hover{color:var(--muted)}
 			</div>
 			<input type="hidden" name="redirect_to" id="bd-redirect" value="<?php echo esc_url( $app ); ?>">
 			<input type="hidden" name="bd_login" value="1">
+			<?php if ( self::$portal ) : ?><input type="hidden" name="bd_portal" value="1"><?php endif; ?>
 			<button class="btn" type="submit" name="wp-submit" data-busy="Signing in…">Sign in</button>
 		</form>
 
@@ -343,7 +374,7 @@ a:hover{color:var(--muted)}
 		</form>
 		<?php endif; ?>
 	</div>
-	<p class="foot"><?php echo esc_html( $label ); ?> · team workspace</p>
+	<p class="foot"><?php echo esc_html( $label ); ?> · <?php echo self::$portal ? 'client portal' : 'team workspace'; ?></p>
 </main>
 <script>
 (function () {

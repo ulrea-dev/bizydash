@@ -10,7 +10,7 @@ const calls = [];
 globalThis.fetch = vi.fn( async ( url, init = {} ) => {
 	const u = new URL( url, 'http://localhost' );
 	const path = ( u.searchParams.get( 'rest_route' ) || u.pathname ).replace( '/bizydash/v1', '' ).replace( '/wp-json', '' );
-	calls.push( { method: init.method || 'GET', path, query: Object.fromEntries( u.searchParams ), body: init.body ? JSON.parse( init.body ) : null } );
+	calls.push( { method: init.method || 'GET', path, query: Object.fromEntries( u.searchParams ), body: typeof init.body === 'string' ? JSON.parse( init.body ) : null } );
 	const factory = ( init.method === 'POST' && routes[ 'POST ' + path ] ) || routes[ path ];
 	if ( ! factory ) {
 		return { ok: false, status: 404, json: async () => ( { message: 'no route ' + path } ) };
@@ -824,6 +824,172 @@ describe( 'BizyDash screens render against API-shaped data', () => {
 		expect( text() ).toContain( 'Analytics page' ); // per-module analytics switch
 		expect( document.querySelector( '[aria-label="Team analytics"]' ) ).toBeTruthy(); // core areas have their own
 		expect( document.querySelector( '[aria-label="Work analytics"]' ) ).toBeTruthy();
+	} );
+
+	it( 'home: a fresh install offers to restore a backup, and Start fresh hides the card', async () => {
+		store.freshInstall = true;
+		store.backupAlert = 'Disk full';
+		await visit( '#/' );
+		expect( text() ).toContain( 'Welcome to BizyDash' );
+		expect( text() ).toContain( 'The last automatic backup failed.' );
+		calls.length = 0;
+		[ ...document.querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Restore a backup' ).click();
+		await flushPromises();
+		expect( window.location.hash ).toBe( '#/settings?tab=backup&restore=1' );
+		await visit( '#/' );
+		[ ...document.querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Start fresh' ).click();
+		await flushPromises();
+		expect( calls.some( ( c ) => c.method === 'POST' && c.path === '/backups/fresh-dismiss' ) ).toBe( true );
+		expect( text() ).not.toContain( 'Welcome to BizyDash' );
+		store.backupAlert = '';
+	} );
+
+	it( 'invoice import: preview merges names sharing an email, matches existing clients, then imports in one batch', async () => {
+		await visit( '#/finance/billing/invoices' );
+		const open = [ ...document.querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Import invoices…' );
+		expect( open ).toBeTruthy();
+		open.click();
+		await flushPromises();
+		const dlg = () => document.querySelector( '.bd-import' );
+		expect( dlg().textContent ).toContain( 'Invoice.ng' );
+		const input = dlg().querySelector( 'input[type="file"]' );
+		Object.defineProperty( input, 'files', { value: [ new File( [ 'x' ], 'inv.xlsx' ) ], configurable: true } );
+		input.dispatchEvent( new Event( 'change' ) );
+		await new Promise( ( r ) => setTimeout( r, 300 ) );
+		await flushPromises();
+		let t = dlg().textContent;
+		expect( t ).toContain( 'Sprout Invoices: 3 invoices from 3 customer names' );
+		expect( t ).toContain( '1 look like invoices you already have' );
+		expect( t ).toContain( 'Number prefix' );
+		expect( t ).toContain( 'Same email as Victor Martins' );
+		expect( t ).toContain( 'will create 2 invoices and 1 new client' ); // the two same-email names merge into one new client; Technext matches an existing one
+		calls.length = 0;
+		[ ...dlg().querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim().startsWith( 'Import 2' ) ).click();
+		await new Promise( ( r ) => setTimeout( r, 300 ) );
+		await flushPromises();
+		const run = calls.find( ( c ) => c.path === '/invoices/import/run' );
+		expect( run.body.rows.length ).toBe( 2 ); // the possible duplicate is skipped
+		expect( run.body.plan.source ).toBe( 'Sprout Invoices' );
+		expect( run.body.plan.number_prefix ).toBe( 'SI-' );
+		expect( run.body.plan.targets.technext ).toEqual( { mode: 'existing', id: 7 } );
+		expect( run.body.plan.targets.victormartins.name ).toBe( 'Ready Designs' );
+		expect( run.body.last ).toBe( true );
+		expect( dlg().textContent ).toContain( 'Imported 3 invoices' );
+		expect( dlg().textContent ).toContain( 'Undo this import' );
+	} );
+
+	it( 'sample data: fresh install offers it, a banner and a Settings button remove it', async () => {
+		store.freshInstall = true;
+		await visit( '#/' );
+		expect( [ ...document.querySelectorAll( 'button' ) ].some( ( b ) => b.textContent.trim() === 'Try with sample data' ) ).toBe( true );
+		store.freshInstall = false;
+		store.demoLoaded = true;
+		await visit( '#/' );
+		expect( text() ).toContain( 'You are looking at sample data.' );
+		await visit( '#/settings?tab=general' );
+		expect( [ ...document.querySelectorAll( 'button' ) ].some( ( b ) => b.textContent.trim() === 'Remove sample data' ) ).toBe( true );
+		store.demoLoaded = false;
+	} );
+
+	it( 'settings: roles & access tab lists roles and client logins; team page shows an Access card', async () => {
+		await visit( '#/settings?tab=access' );
+		const t = text();
+		for ( const l of [ 'Client logins', 'BD Client', 'BD Work Team', '2 of 25 clients linked', 'Create logins for existing clients' ] ) {
+			expect( t ).toContain( l );
+		}
+		store.caps = { team: true };
+		await visit( '#/team/1' );
+		[ ...document.querySelectorAll( '.el-tabs__item' ) ].find( ( x ) => x.textContent.trim() === 'Details' ).click();
+		await new Promise( ( r ) => setTimeout( r, 300 ) );
+		await flushPromises();
+		expect( text() ).toContain( 'Login: zara.' );
+		store.caps = {};
+	} );
+
+	it( 'client portal: settings tab, and the client page lists logins with an invite button', async () => {
+		await visit( '#/settings?tab=portal' );
+		const t = text();
+		for ( const l of [ 'Client portal is on', 'Address word', 'Welcome message', 'Tasks inside projects', 'Bills coming up' ] ) {
+			expect( t ).toContain( l );
+		}
+		store.caps = { clients: true };
+		await visit( '#/clients/1' );
+		[ ...document.querySelectorAll( '.el-tabs__item' ) ].find( ( x ) => x.textContent.trim().startsWith( 'Contacts' ) ).click();
+		await new Promise( ( r ) => setTimeout( r, 400 ) );
+		await flushPromises();
+		expect( text() ).toContain( 'View portal as this client' );
+		expect( text() ).toContain( 'ada@abc.example' );
+		calls.length = 0;
+		[ ...document.querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Send again' || b.textContent.trim() === 'Send invitation' ).click();
+		await flushPromises();
+		expect( calls.some( ( c ) => c.method === 'POST' && c.path === '/clients/1/portal-invite' && c.body.user_id === 9 ) ).toBe( true );
+		store.caps = {};
+	} );
+
+	it( 'settings: backup tab lists saved backups, warns about problems and runs a backup', async () => {
+		await visit( '#/settings?tab=backup' );
+		const t = text();
+		for ( const l of [ 'Back up now', 'Automatic backups', 'Saved backups', 'Password protected', 'Clients & team 417' ] ) {
+			expect( t ).toContain( l );
+		}
+		expect( t ).toContain( 'can be opened from the web' ); // exposed folder warning
+		expect( t ).toContain( 'The last automatic backup failed: Disk full' );
+		calls.length = 0;
+		const btn = [ ...document.querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Back up now' );
+		btn.click();
+		await new Promise( ( r ) => setTimeout( r, 300 ) );
+		await flushPromises();
+		expect( calls.some( ( c ) => c.method === 'POST' && c.path === '/backups' && c.body.files === true ) ).toBe( true );
+		expect( calls.some( ( c ) => c.path === '/backups/step' && c.body.job === 'c'.repeat( 16 ) ) ).toBe( true );
+	} );
+
+	it( 'restore dialog: shows what the backup holds, blocks missing parts, needs RESTORE typed, then runs', async () => {
+		await visit( '#/settings?tab=backup' );
+		const restoreBtn = [ ...document.querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Restore…' );
+		restoreBtn.click();
+		await new Promise( ( r ) => setTimeout( r, 300 ) );
+		await flushPromises();
+		const dlg = () => document.querySelector( '.bd-restore' );
+		let t = dlg().textContent;
+		for ( const l of [ 'Clients, departments & team', 'Available', 'No records', 'Not in this backup', 'older version', 'mystery_table', 'SMTP password' ] ) {
+			expect( t ).toContain( l );
+		}
+		// contracts is missing from the backup, so its checkbox cannot be ticked
+		expect( dlg().querySelector( '[aria-label="Contracts"]' ).closest( '.el-checkbox' ).classList.contains( 'is-disabled' ) ).toBe( true );
+		// Clients + Work are ticked by default; Finance (206 records here) and Contracts (missing from the backup) are linked to clients
+		const cont = () => [ ...dlg().querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Continue' );
+		expect( dlg().textContent ).toContain( 'Restore Finance together' );
+		expect( dlg().textContent ).toContain( 'no Contracts data to restore alongside' ); // cannot be fixed with this backup
+		expect( cont().disabled ).toBe( true );
+		[ ...dlg().querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Restore Finance together' ).click();
+		await flushPromises();
+		expect( cont().disabled ).toBe( true ); // Contracts still stands in the way
+		dlg().querySelector( '[aria-label="Clients, departments & team"]' ).click(); // leave clients out
+		await flushPromises();
+		expect( cont().disabled ).toBe( false );
+		cont().click();
+		await flushPromises();
+		t = dlg().textContent;
+		expect( t ).toContain( 'Type RESTORE to continue' );
+		const go = () => [ ...dlg().querySelectorAll( 'button' ) ].find( ( b ) => b.textContent.trim() === 'Restore now' );
+		expect( go().disabled ).toBe( true );
+		const input = dlg().querySelector( 'input[placeholder="RESTORE"]' );
+		input.value = 'RESTORE';
+		input.dispatchEvent( new Event( 'input' ) );
+		await flushPromises();
+		expect( go().disabled ).toBe( false );
+		calls.length = 0;
+		go().click();
+		await new Promise( ( r ) => setTimeout( r, 300 ) );
+		await flushPromises();
+		const start = calls.find( ( c ) => c.path === '/backups/restore' );
+		expect( start.body.modules.sort() ).toEqual( [ 'finance', 'work' ] );
+		expect( calls.some( ( c ) => c.path === '/backups/restore-step' ) ).toBe( true );
+		t = dlg().textContent;
+		expect( t ).toContain( 'Restore complete.' );
+		expect( t ).toContain( '14 of 14' );
+		expect( t ).toContain( 'Check SMTP' );
+		expect( t ).toContain( 'Undo this restore' );
 	} );
 
 	it( 'settings: currencies tab has base currency, rates and on/off switches', async () => {

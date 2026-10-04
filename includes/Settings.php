@@ -32,6 +32,18 @@ class Settings {
 			'app_slug'            => 'app',
 			'default_due_days'    => 14,
 			'delete_on_uninstall' => false,
+			'portal_auto_users'   => true,
+			'portal_enabled'      => true,
+			'portal_slug'         => 'portal',
+			'portal_title'        => '',
+			'portal_welcome'      => '',
+			'portal_show_projects' => true,
+			'portal_show_tasks'   => true,
+			'portal_show_assignee' => true,
+			'portal_show_billing' => true,
+			'portal_show_invoices' => true,
+			'portal_show_contracts' => true,
+			'delete_backups_on_uninstall' => false,
 			// Business profile (printed on invoices).
 			'business_name'        => '',
 			'business_logo_id'     => 0,
@@ -161,6 +173,27 @@ class Settings {
 		if ( isset( $in['app_slug'] ) ) {
 			$sl = sanitize_title( $in['app_slug'] );
 			$out['app_slug'] = ( '' !== $sl && ! in_array( $sl, array( 'wp-admin', 'wp-json', 'wp-content', 'wp-includes', 'wp-login', 'feed', 'sign', 'contract', 'verify', 'invoice' ), true ) ) ? $sl : 'app';
+		}
+		foreach ( array( 'portal_enabled', 'portal_show_projects', 'portal_show_tasks', 'portal_show_assignee', 'portal_show_billing', 'portal_show_invoices', 'portal_show_contracts' ) as $k ) {
+			if ( isset( $in[ $k ] ) ) {
+				$out[ $k ] = (bool) $in[ $k ];
+			}
+		}
+		foreach ( array( 'portal_title' => 'sanitize_text_field', 'portal_welcome' => 'sanitize_textarea_field' ) as $k => $fn ) {
+			if ( isset( $in[ $k ] ) ) {
+				$out[ $k ] = $fn( (string) $in[ $k ] );
+			}
+		}
+		if ( isset( $in['portal_slug'] ) ) {
+			$slug = sanitize_title( (string) $in['portal_slug'] );
+			$bad  = array( 'wp-admin', 'wp-content', 'wp-json', 'sign', 'verify', 'contract', 'invoice', (string) ( $out['app_slug'] ?? 'app' ) );
+			$out['portal_slug'] = ( '' === $slug || in_array( $slug, $bad, true ) ) ? 'portal' : $slug;
+		}
+		if ( isset( $in['portal_auto_users'] ) ) {
+			$out['portal_auto_users'] = (bool) $in['portal_auto_users'];
+		}
+		if ( isset( $in['delete_backups_on_uninstall'] ) ) {
+			$out['delete_backups_on_uninstall'] = (bool) $in['delete_backups_on_uninstall'];
 		}
 		if ( isset( $in['delete_on_uninstall'] ) ) {
 			$out['delete_on_uninstall'] = (bool) $in['delete_on_uninstall'];

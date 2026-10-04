@@ -111,6 +111,11 @@ class Contracts {
 		return isset( $_SERVER['HTTP_USER_AGENT'] ) ? substr( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ), 0, 500 ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 	}
 
+	/** The seal on one audit-log entry: covers the previous entry's seal, so the log cannot be edited unnoticed. */
+	public static function event_hash( $prev, $contract_id, $signer_id, $event, $detail, $created_at ) {
+		return hash( 'sha256', $prev . '|' . (int) $contract_id . '|' . (int) $signer_id . '|' . $event . '|' . $detail . '|' . $created_at );
+	}
+
 	/** Appends an event; each row's hash covers the previous row's hash. Returns the event hash. */
 	public static function event( $contract_id, $signer_id, $event, array $detail = array() ) {
 		global $wpdb;
@@ -120,7 +125,7 @@ class Contracts {
 		$prev = (string) $wpdb->get_var( $wpdb->prepare( "SELECT hash FROM $tbl WHERE contract_id=%d ORDER BY id DESC LIMIT 1", $contract_id ) ); // phpcs:ignore WordPress.DB
 		$now  = gmdate( 'Y-m-d H:i:s' );
 		$json = wp_json_encode( $detail, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
-		$hash = hash( 'sha256', $prev . '|' . (int) $contract_id . '|' . (int) $signer_id . '|' . $event . '|' . $json . '|' . $now );
+		$hash = self::event_hash( $prev, $contract_id, $signer_id, $event, $json, $now );
 		$wpdb->insert(
 			$tbl,
 			array(
@@ -146,7 +151,7 @@ class Contracts {
 		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . self::t( 'contract_events' ) . ' WHERE contract_id=%d ORDER BY id', $contract_id ), ARRAY_A ); // phpcs:ignore WordPress.DB
 		$prev = '';
 		foreach ( (array) $rows as $r ) {
-			$h = hash( 'sha256', $prev . '|' . (int) $r['contract_id'] . '|' . (int) $r['signer_id'] . '|' . $r['event'] . '|' . $r['detail'] . '|' . $r['created_at'] );
+			$h = self::event_hash( $prev, $r['contract_id'], $r['signer_id'], $r['event'], $r['detail'], $r['created_at'] );
 			if ( $r['prev_hash'] !== $prev || $r['hash'] !== $h ) {
 				return array( 'ok' => false, 'count' => count( $rows ), 'broken_at' => (int) $r['id'] );
 			}
